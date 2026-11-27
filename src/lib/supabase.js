@@ -1,45 +1,36 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    /^https?:\/\//i.test(supabaseUrl)
+);
+
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 /**
- * Dispara manualmente qualquer workflow de automacao no GitHub Actions
- * (substitui a execucao manual das funcoes do Google Apps Script).
+ * Dispara uma automacao por meio de uma Edge Function autenticada.
+ * O token do GitHub fica somente nos secrets do Supabase, nunca no navegador.
  */
 export async function dispararAutomacaoGitHub(comando, modoTeste = false) {
-  const token = import.meta.env.VITE_GITHUB_DISPATCH_TOKEN;
-  const repo = import.meta.env.VITE_GITHUB_REPO;
-
-  if (!token || !repo) {
-    throw new Error(
-      'Configure VITE_GITHUB_REPO e VITE_GITHUB_DISPATCH_TOKEN nas variáveis de ambiente (GitHub Secrets) para acionar automações pela interface.'
-    );
+  if (!supabase) {
+    throw new Error('Configure as variáveis do Supabase antes de acionar automações.');
   }
 
-  const res = await fetch(
-    `https://api.github.com/repos/${repo}/actions/workflows/automacoes.yml/dispatches`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ref: 'main',
-        inputs: {
-          comando,
-          modo_teste: String(modoTeste),
-        },
-      }),
+  const { error } = await supabase.functions.invoke('trigger-automation', {
+    body: { command: comando, test: modoTeste },
+  });
+  if (error) {
+    let message = error.message;
+    if (error.context instanceof Response) {
+      const details = await error.context.clone().json().catch(() => null);
+      if (typeof details?.error === 'string') message = details.error;
     }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Falha ao acionar GitHub Actions (${res.status}): ${errText}`);
+    throw new Error(`Falha ao acionar automação: ${message}`);
   }
 }

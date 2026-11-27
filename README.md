@@ -1,63 +1,110 @@
-# [Compras EMC] Sistema de Planejamento e Execução (2025-26)
+# Compras EMC - Planejamento e Execução
 
-Aplicação web completa para substituir as planilhas `[Compras EMC] PLANEJAMENTO (2025-26)` e `[Compras EMC] EXECUÇÃO (2025-26)`, mantendo todas as abas, cálculos automáticos, envio de e-mails agendados e sincronização com o Google Agenda.
+Aplicação React/Vite para organizar as cinco etapas de planejamento de compras, acompanhar saldos e pedidos, administrar a equipe e enviar avisos por e-mail. Os dados ficam no Supabase; o site e as automações são publicados/executados pelo GitHub.
 
-## Estrutura do Projeto
+## O que está implementado
 
-- `src/`: Interface Web (React + Vite + Tailwind CSS) para hospedagem gratuita no **GitHub Pages**.
-  - **Planejamento (5 Etapas):** Abas padronizadas de Etapa 1 a Etapa 5 (com todas as 18 colunas), importação/exportação CSV e aba **Cronograma Anual & Agenda**.
-  - **Execução & Saldos:** Abas **Saldo Anual**, **Execução** (abate automático de saldo por pedido/empenho) e **Atas Vigentes**.
-  - **Equipe, Grupos & E-mails:** Gestão de destinatários, grupos SIASG por etapa e disparos manuais/testes.
-- `supabase/`:
-  - `schema.sql`: Tabelas, gatilhos automáticos de saldo, view de Atas Vigentes e políticas de segurança (RLS).
-  - `seed.sql`: Carga inicial com a Equipe, Cronograma Anual e Grupos das 5 etapas.
-- `scripts/automations.mjs` & `.github/workflows/automacoes.yml`:
-  - Substitui os gatilhos do Google Apps Script rodando gratuitamente via **GitHub Actions** (diariamente às 07h e 08h BRT, e todo dia 1º de cada mês).
+- Planejamento das etapas 1 a 5, com cadastro, edição, busca e importação/exportação CSV.
+- Cronograma anual e integração opcional com Google Agenda.
+- Saldo anual, atas vigentes e pedidos/empenhos com recálculo de saldo no banco.
+- Acesso por link mágico de e-mail e autorização baseada na tabela `equipe`.
+- E-mails automáticos por GitHub Actions.
+- Acionamento manual seguro via Supabase Edge Function. O token do GitHub fica no Supabase e não é incluído no JavaScript público.
 
----
+## Configuração inicial
 
-## Como fazer o Push para o GitHub e Colocar no Ar
+### 1. Revise os destinatários antes de carregar os dados
 
-### 1. Subir este código para o GitHub
-Abra o terminal dentro desta pasta (`compras-emc-ufsc`) e execute:
+Abra `supabase/seed.sql` e confirme/ajuste os e-mails da equipe e os dados de cronograma/grupos. As pessoas ativas em `equipe` podem acessar o sistema e também recebem os e-mails automáticos. Execute o seed somente uma vez no banco vazio.
 
-```bash
-git init
-git add .
-git commit -m "Versão inicial - Sistema Compras EMC"
-git branch -M main
-git remote add origin https://github.com/SEU-USUARIO/compras-emc-ufsc.git
-git push -u origin main
-```
+### 2. Configure o banco e autenticação no Supabase
 
-### 2. Configurar o Banco de Dados (Supabase - Gratuito)
-1. Acesse [supabase.com](https://supabase.com) e crie um novo projeto.
-2. Abra o **SQL Editor**, cole e execute o arquivo `supabase/schema.sql`.
-3. Em seguida, execute o arquivo `supabase/seed.sql` para carregar a Equipe, o Cronograma Anual e os Grupos.
-4. Em **Authentication > URL Configuration**, adicione a URL do seu GitHub Pages:
-   `https://SEU-USUARIO.github.io/compras-emc-ufsc/`
+1. Crie um projeto no [Supabase](https://supabase.com).
+2. No **SQL Editor**, execute `supabase/schema.sql` e depois `supabase/seed.sql`.
+3. Em **Authentication > Providers**, habilite o provedor de e-mail.
+4. Em **Authentication > URL Configuration**, configure:
+   - Site URL: `https://teobalconi.github.io/compras-emc-ufsc/`
+   - Redirect URLs: `https://teobalconi.github.io/compras-emc-ufsc/` e `http://localhost:5173/`
 
-### 3. Configurar Secrets no GitHub
-No seu repositório no GitHub, vá em **Settings > Secrets and variables > Actions** e cadastre:
+### 3. Cadastre os secrets do GitHub Actions
 
-| Secret | Descrição |
-| :--- | :--- |
-| `VITE_SUPABASE_URL` | URL do projeto Supabase (ex: `https://xyz.supabase.co`) |
-| `VITE_SUPABASE_ANON_KEY` | Chave `anon` pública do Supabase |
-| `SUPABASE_URL` | Mesma URL do projeto Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Chave `service_role` do Supabase (usada pelo robô de e-mail) |
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `465` |
-| `SMTP_USER` | E-mail remetente (ex: `teo.balconi@polo.ufsc.br`) |
-| `SMTP_PASS` | Senha de App de 16 dígitos gerada na Conta Google |
-| `GOOGLE_CALENDAR_ID` | `c_473bfaf8f332eb7ed994b00f8401a9719a50ae0817c307e64359e41b5779058d@group.calendar.google.com` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | JSON completo da Service Account do Google Cloud (com permissão na agenda) |
-| `VITE_GITHUB_DISPATCH_TOKEN` | *(Opcional)* Token PAT com permissão `Actions: Read and write` para botões manuais na tela |
+No repositório, abra **Settings > Secrets and variables > Actions > New repository secret** e cadastre:
 
-### 4. Ativar o GitHub Pages
-1. No GitHub, vá em **Settings > Pages**.
-2. Em **Build and deployment > Source**, selecione **GitHub Actions**.
-3. O workflow `.github/workflows/deploy.yml` publicará o site automaticamente.
+| Secret | Valor/uso |
+| --- | --- |
+| `VITE_SUPABASE_URL` | URL do projeto Supabase |
+| `VITE_SUPABASE_ANON_KEY` | Chave pública `anon`/publishable do Supabase |
+| `SUPABASE_URL` | A mesma URL do projeto |
+| `SUPABASE_SERVICE_ROLE_KEY` | Chave `service_role`; usada apenas pelo job de automações |
+| `SMTP_HOST` | Host SMTP, por exemplo `smtp.gmail.com` |
+| `SMTP_PORT` | Porta SMTP SSL, normalmente `465` |
+| `SMTP_USER` | Endereço de e-mail remetente |
+| `SMTP_PASS` | Senha de app do provedor de e-mail |
 
-### 5. Importar Dados Existentes das Planilhas
-No Google Sheets, abra cada aba (`planejamento (etapa 1)` a `5` e `Saldo Anual`), clique em **Arquivo > Fazer download > Valores separados por vírgula (.csv)** e use o botão **Importar CSV** diretamente na tela correspondente do sistema.
+Para usar os comandos de Google Agenda, cadastre também:
+
+| Secret | Valor/uso |
+| --- | --- |
+| `GOOGLE_CALENDAR_ID` | ID da agenda compartilhada |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | JSON da Service Account com acesso de edição à agenda |
+
+Nunca use a chave `service_role`, a senha SMTP ou a chave privada Google como variável `VITE_*`: variáveis desse tipo são incorporadas ao site público.
+
+### 4. Configure o acionamento manual protegido
+
+O botão de automação chama uma Edge Function que verifica a sessão e a participação ativa na equipe antes de despachar um workflow. O token do GitHub precisa ficar como secret **do Supabase**, não no navegador.
+
+1. Crie um Fine-grained Personal Access Token no GitHub para `teobalconi/compras-emc-ufsc`, com permissão **Actions: Read and write**.
+2. Na raiz do projeto, crie localmente o arquivo `.env.functions` com:
+
+   ```dotenv
+   GITHUB_ACTIONS_TOKEN=cole_o_token_aqui
+   GITHUB_REPOSITORY=teobalconi/compras-emc-ufsc
+   ```
+
+3. No terminal, execute:
+
+   ```powershell
+   npx.cmd supabase login
+   npx.cmd supabase link --project-ref SEU_PROJECT_REF
+   npx.cmd supabase secrets set --env-file .env.functions
+   npx.cmd supabase functions deploy trigger-automation
+   ```
+
+   O `SEU_PROJECT_REF` aparece na URL do projeto ou em **Project Settings > General**.
+4. Apague o arquivo `.env.functions` depois do envio. Ele está excluído pelo `.gitignore`; nunca o envie ao GitHub ou compartilhe.
+
+### 5. Publique o site
+
+1. No GitHub, abra **Settings > Pages** e selecione **GitHub Actions** como fonte de publicação.
+2. Confirme que os secrets `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` estão cadastrados.
+3. Faça commit e push do projeto para a branch `main`.
+4. O workflow `Deploy GitHub Pages` compila e publica o site após o push. Consulte o resultado em **Actions**.
+
+O endereço deste repositório é `https://teobalconi.github.io/compras-emc-ufsc/`.
+
+### 6. Ative e teste os avisos
+
+O workflow `Automações Compras EMC` executa alertas às 07h e 08h (horário de Brasília); no primeiro dia do mês, também envia os resumos mensais. O GitHub pode iniciar execuções agendadas com atraso.
+
+Antes de depender dos avisos, confira os secrets de SMTP e execute um teste em **Equipe, Grupos & E-mails**. Os testes de e-mail são enviados somente ao primeiro membro ativo da equipe. Os comandos de agenda apagam/criam eventos; revise a agenda e as permissões da Service Account antes de usá-los.
+
+### 7. Importe os dados das planilhas
+
+Exporte cada aba do Google Sheets como CSV e importe pela aba correspondente no sistema. Confira as colunas e os valores após a importação, especialmente os saldos iniciais. Para saldos já consumidos antes do sistema, importe o saldo atual como `Qt. Def. Setor` ou registre os pedidos anteriores; o saldo é recalculado com base nessa quantidade e nos pedidos não cancelados registrados no sistema.
+
+## Desenvolvimento local
+
+1. Copie `.env.example` para `.env` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+2. Instale e execute:
+
+   ```powershell
+   npm.cmd ci
+   npm.cmd run dev
+   ```
+
+3. Para validar a compilação:
+
+   ```powershell
+   npm.cmd run build
+   ```

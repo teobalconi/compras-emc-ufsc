@@ -1,0 +1,2 @@
+[functions.trigger-automation]
+verify_jwt = true

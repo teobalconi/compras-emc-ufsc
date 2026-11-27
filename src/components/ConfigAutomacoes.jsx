@@ -14,10 +14,14 @@ export default function ConfigAutomacoes() {
   }, []);
 
   async function carregar() {
-    const [{ data: eq }, { data: gr }] = await Promise.all([
+    const [{ data: eq, error: errEq }, { data: gr, error: errGr }] = await Promise.all([
       supabase.from('equipe').select('*').order('nome'),
       supabase.from('grupos_etapa').select('*').order('etapa').order('grupo'),
     ]);
+    if (errEq || errGr) {
+      setStatusMsg(`❌ Erro ao carregar configurações: ${(errEq || errGr).message}`);
+      return;
+    }
     setEquipe(eq || []);
     setGrupos(gr || []);
   }
@@ -41,7 +45,8 @@ export default function ConfigAutomacoes() {
   }
 
   async function alternarAtivo(membro) {
-    await supabase.from('equipe').update({ ativo: !membro.ativo }).eq('id', membro.id);
+    const { error } = await supabase.from('equipe').update({ ativo: !membro.ativo }).eq('id', membro.id);
+    if (error) return alert(error.message);
     carregar();
   }
 

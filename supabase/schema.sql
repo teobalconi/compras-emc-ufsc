@@ -94,19 +94,29 @@ create table if not exists execucao_pedidos (
 );
 
 -- Trigger: Recalcula saldo_setor automaticamente a partir de qt_def_setor menos pedidos ativos
-create or replace function recalcular_saldo_setor() returns trigger as $$
-declare
-  target_id uuid;
+create or replace function recalcular_saldo_item(p_saldo_id uuid) returns void as $$
 begin
-  target_id := coalesce(new.saldo_item_id, old.saldo_item_id);
+  if p_saldo_id is null then
+    return;
+  end if;
+
   update saldo_anual
   set saldo_setor = qt_def_setor - coalesce((
     select sum(quantidade)
     from execucao_pedidos
-    where saldo_item_id = target_id
+    where saldo_item_id = p_saldo_id
       and status <> 'Cancelado'
   ), 0)
-  where id = target_id;
+  where id = p_saldo_id;
+end;
+$$ language plpgsql;
+
+create or replace function recalcular_saldo_setor() returns trigger as $$
+begin
+  if tg_op = 'UPDATE' and old.saldo_item_id is distinct from new.saldo_item_id then
+    perform recalcular_saldo_item(old.saldo_item_id);
+  end if;
+  perform recalcular_saldo_item(coalesce(new.saldo_item_id, old.saldo_item_id));
   return null;
 end;
 $$ language plpgsql;
@@ -117,7 +127,8 @@ after insert or update or delete on execucao_pedidos
 for each row execute function recalcular_saldo_setor();
 
 -- 7. VIEW: ATAS VIGENTES (consolida os pregões ativos a partir do Saldo Anual)
-create or replace view atas_vigentes as
+create or replace view atas_vigentes
+with (security_invoker = true) as
 select
   edital_oficio,
   setor,
@@ -135,7 +146,23 @@ from saldo_anual
 group by edital_oficio, setor
 order by fim_vigencia asc;
 
--- Segurança (RLS): Apenas usuários autenticados cuja conta está na tabela 'equipe' podem ler/editar
+-- Função SECURITY DEFINER para checar autorização sem causar recursão infinita na tabela equipe
+create or replace function is_equipe_autorizada()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.equipe e
+    where lower(e.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      and e.ativo = true
+  );
+$$;
+
+-- Segurança (RLS): Apenas usuários autenticados cuja conta está ativa na tabela 'equipe' podem ler/editar
 alter table equipe enable row level security;
 alter table grupos_etapa enable row level security;
 alter table cronograma_anual enable row level security;
@@ -143,21 +170,26 @@ alter table planejamento_itens enable row level security;
 alter table saldo_anual enable row level security;
 alter table execucao_pedidos enable row level security;
 
-create policy "Acesso equipe autorizada" on equipe for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
-create policy "Acesso grupos" on grupos_etapa for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
-create policy "Acesso cronograma" on cronograma_anual for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
-create policy "Acesso planejamento" on planejamento_itens for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
-create policy "Acesso saldo" on saldo_anual for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
-create policy "Acesso execucao" on execucao_pedidos for all using (
-  exists (select 1 from equipe e where e.email = auth.jwt() ->> 'email' and e.ativo = true)
-);
+drop policy if exists "Acesso equipe autorizada" on equipe;
+create policy "Acesso equipe autorizada" on equipe
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());
+
+drop policy if exists "Acesso grupos" on grupos_etapa;
+create policy "Acesso grupos" on grupos_etapa
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());
+
+drop policy if exists "Acesso cronograma" on cronograma_anual;
+create policy "Acesso cronograma" on cronograma_anual
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());
+
+drop policy if exists "Acesso planejamento" on planejamento_itens;
+create policy "Acesso planejamento" on planejamento_itens
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());
+
+drop policy if exists "Acesso saldo" on saldo_anual;
+create policy "Acesso saldo" on saldo_anual
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());
+
+drop policy if exists "Acesso execucao" on execucao_pedidos;
+create policy "Acesso execucao" on execucao_pedidos
+  for all using (is_equipe_autorizada()) with check (is_equipe_autorizada());

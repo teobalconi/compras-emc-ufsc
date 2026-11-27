@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import PlanejamentoModule from './components/PlanejamentoModule';
 import ExecucaoModule from './components/ExecucaoModule';
 import ConfigAutomacoes from './components/ConfigAutomacoes';
-import { ClipboardList, PackageCheck, Settings, LogOut, ShieldCheck } from 'lucide-react';
+import { ClipboardList, PackageCheck, Settings, LogOut, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loadingAuth, setLoadingAuth] = useState(isSupabaseConfigured);
+  const [authStatus, setAuthStatus] = useState('checking'); // 'checking' | 'authorized' | 'unauthorized' | 'error'
+  const [authError, setAuthError] = useState('');
   const [email, setEmail] = useState('');
   const [modulo, setModulo] = useState('planejamento'); // 'planejamento' | 'execucao' | 'config'
   const [msgLogin, setMsgLogin] = useState('');
   const [erroLogin, setErroLogin] = useState(false);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoadingAuth(false);
@@ -24,8 +28,47 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session?.user?.email || !supabase) {
+      setAuthStatus('checking');
+      setAuthError('');
+      return;
+    }
+
+    let cancelled = false;
+    async function verificarEquipe() {
+      setAuthStatus('checking');
+      setAuthError('');
+      const { data, error } = await supabase
+        .from('equipe')
+        .select('id, ativo')
+        .ilike('email', session.user.email.trim())
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        setAuthStatus('error');
+        setAuthError(error.message);
+        return;
+      }
+
+      if (data?.ativo) {
+        setAuthStatus('authorized');
+      } else {
+        setAuthStatus('unauthorized');
+      }
+    }
+
+    verificarEquipe();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.email]);
+
   async function loginMagicLink(e) {
     e.preventDefault();
+    if (!supabase) return;
     setErroLogin(false);
     setMsgLogin('Enviando link de acesso...');
     const { error } = await supabase.auth.signInWithOtp({
@@ -40,6 +83,28 @@ export default function App() {
     } else {
       setMsgLogin('Link de acesso enviado! Verifique sua caixa de entrada (inclusive spam).');
     }
+  }
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="bg-white p-7 rounded-2xl shadow-lg border border-amber-200 w-full max-w-lg space-y-3">
+          <div className="flex items-center gap-2 text-amber-700">
+            <AlertTriangle className="w-6 h-6" />
+            <h1 className="text-lg font-bold text-slate-900">Configuração do Supabase pendente</h1>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            As variáveis <code className="bg-slate-100 px-1 py-0.5 rounded">VITE_SUPABASE_URL</code> e{' '}
+            <code className="bg-slate-100 px-1 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code> não estão configuradas.
+          </p>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Para rodar localmente, copie <code className="bg-slate-100 px-1 py-0.5 rounded">.env.example</code> para{' '}
+            <code className="bg-slate-100 px-1 py-0.5 rounded">.env</code> e preencha as chaves do seu projeto Supabase.
+            No GitHub Pages, cadastre-as em <strong>Settings &gt; Secrets and variables &gt; Actions</strong> e execute o deploy novamente.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (loadingAuth) {
@@ -85,6 +150,41 @@ export default function App() {
             </p>
           )}
         </form>
+      </div>
+    );
+  }
+
+  if (authStatus === 'checking') {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-slate-600 text-sm">
+        Verificando permissão na tabela Equipe...
+      </div>
+    );
+  }
+
+  if (authStatus !== 'authorized') {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="bg-white p-7 rounded-2xl shadow-lg border border-red-200 w-full max-w-md space-y-4">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertTriangle className="w-6 h-6" />
+            <h1 className="text-lg font-bold text-slate-900">
+              {authStatus === 'error' ? 'Erro ao verificar acesso' : 'Acesso não autorizado'}
+            </h1>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {authStatus === 'error'
+              ? `Não foi possível consultar a tabela equipe no Supabase: ${authError}`
+              : `O e-mail ${session.user.email} não está cadastrado como ativo na aba Equipe. Peça a um membro autorizado para adicioná-lo ou reativá-lo.`}
+          </p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="w-full flex items-center justify-center gap-1.5 bg-red-700 hover:bg-red-800 text-white py-2.5 rounded-lg font-semibold text-sm transition"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair e trocar de conta
+          </button>
+        </div>
       </div>
     );
   }

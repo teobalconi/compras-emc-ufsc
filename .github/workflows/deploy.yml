@@ -23,13 +23,11 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm install
+      - run: npm ci
       - name: Build Vite App
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GITHUB_REPO: ${{ github.repository }}
-          VITE_GITHUB_DISPATCH_TOKEN: ${{ secrets.VITE_GITHUB_DISPATCH_TOKEN }}
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

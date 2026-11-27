@@ -45,15 +45,24 @@ function formatUnidades(valor) {
     : num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-async function getDestinatarios(somentePrimeiro = false) {
-  const { data, error } = await supabase
-    .from('equipe')
-    .select('email')
-    .eq('ativo', true)
-    .order('created_at', { ascending: true });
+async function getRows(query, recurso) {
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao consultar ${recurso}: ${error.message}`);
+  return data || [];
+}
 
-  if (error || !data?.length) throw new Error('Nenhum destinatário ativo encontrado na tabela equipe.');
+async function getDestinatarios(somentePrimeiro = false) {
+  const data = await getRows(
+    supabase
+      .from('equipe')
+      .select('email')
+      .eq('ativo', true)
+      .order('created_at', { ascending: true }),
+    'equipe'
+  );
+
   const emails = data.map((r) => r.email.trim()).filter(Boolean);
+  if (!emails.length) throw new Error('Nenhum destinatário ativo encontrado na tabela equipe.');
   return somentePrimeiro ? [emails[0]] : emails;
 }
 
@@ -92,8 +101,8 @@ async function resumoMensalCronograma(modoTeste = false) {
       },
     ];
   } else {
-    const { data } = await supabase.from('cronograma_anual').select('*');
-    atividades = (data || [])
+    const data = await getRows(supabase.from('cronograma_anual').select('*'), 'cronograma anual');
+    atividades = data
       .map((item) => ({
         ...item,
         inicio: parseDateUTC(item.data_inicio),
@@ -177,8 +186,8 @@ async function alertaInicioAtividade(modoTeste = false) {
       },
     ];
   } else {
-    const { data } = await supabase.from('cronograma_anual').select('*');
-    atividades = (data || [])
+    const data = await getRows(supabase.from('cronograma_anual').select('*'), 'cronograma anual');
+    atividades = data
       .map((item) => ({
         ...item,
         inicio: parseDateUTC(item.data_inicio),
@@ -252,8 +261,8 @@ async function alertaFimAtividade(modoTeste = false) {
       },
     ];
   } else {
-    const { data } = await supabase.from('cronograma_anual').select('*');
-    atividades = (data || [])
+    const data = await getRows(supabase.from('cronograma_anual').select('*'), 'cronograma anual');
+    atividades = data
       .map((item) => ({
         ...item,
         inicio: parseDateUTC(item.data_inicio),
@@ -338,8 +347,11 @@ async function resumoMensalPregoes(modoTeste = false) {
       },
     ];
   } else {
-    const { data } = await supabase.from('saldo_anual').select('*').gt('saldo_setor', 0);
-    itens = (data || [])
+    const data = await getRows(
+      supabase.from('saldo_anual').select('*').gt('saldo_setor', 0),
+      'saldo anual'
+    );
+    itens = data
       .map((row) => ({
         descricao: `${row.edital_oficio} - ${row.descricao}`,
         dataVencimento: parseDateUTC(row.fim_vigencia),
@@ -412,8 +424,11 @@ async function alerta30Dias(modoTeste = false) {
       { descricao: 'ITEM TESTE - Contrato de Suporte', dataVencimento: dataAlvo, saldo: 5000.75 },
     ];
   } else {
-    const { data } = await supabase.from('saldo_anual').select('*').gt('saldo_setor', 0);
-    itens = (data || [])
+    const data = await getRows(
+      supabase.from('saldo_anual').select('*').gt('saldo_setor', 0),
+      'saldo anual'
+    );
+    itens = data
       .map((row) => ({
         descricao: `${row.edital_oficio} - ${row.descricao}`,
         dataVencimento: parseDateUTC(row.fim_vigencia),
@@ -485,9 +500,12 @@ function getCalendarClient() {
 
 async function sincronizarGoogleAgenda() {
   const calendar = getCalendarClient();
-  const { data: atividades } = await supabase.from('cronograma_anual').select('*');
+  const atividades = await getRows(
+    supabase.from('cronograma_anual').select('*'),
+    'cronograma anual'
+  );
 
-  for (const item of atividades || []) {
+  for (const item of atividades) {
     if (!item.data_inicio || !item.data_fim) continue;
     const titulo = `${item.etapa_nome}: ${item.atividade}`;
     const inicioISO = item.data_inicio.split('T')[0];
@@ -579,7 +597,7 @@ switch (comando) {
     await apagarEventosAgenda(false);
     break;
   case 'rotina-diaria':
-  default: {
+  case 'rotina-diaria': {
     const hoje = getHojeBRT();
     await alertaInicioAtividade(false);
     await alertaFimAtividade(false);
@@ -590,4 +608,6 @@ switch (comando) {
     }
     break;
   }
+  default:
+    throw new Error(`Comando de automação desconhecido: ${comando}`);
 }

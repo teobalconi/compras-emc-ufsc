@@ -11,6 +11,7 @@ dist-ssr/
 .env
 .env.local
 .env.production
+.env.functions
 
 # Logs & OS files
 npm-debug.log*
