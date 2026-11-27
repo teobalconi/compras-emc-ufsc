@@ -1,0 +1,62 @@
+name: Automações Compras EMC
+
+on:
+  schedule:
+    # 10:00 UTC = 07:00 BRT (Alerta de Início diário)
+    - cron: '0 10 * * *'
+    # 11:00 UTC = 08:00 BRT (Alertas de Fim 7d, Pregões 30d + Resumos Mensais no dia 1)
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      comando:
+        description: 'Ação a executar'
+        required: true
+        default: 'rotina-diaria'
+        type: choice
+        options:
+          - rotina-diaria
+          - alerta-inicio
+          - alerta-fim
+          - resumo-cronograma
+          - resumo-pregoes
+          - alerta-30dias
+          - agenda-sync
+          - agenda-limpar-cronograma
+          - agenda-limpar-ano
+      modo_teste:
+        description: 'Enviar apenas para o 1º e-mail da equipe (dados simulados)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  executar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Executar Automação
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            node automations.mjs "${{ github.event.inputs.comando }}" "${{ github.event.inputs.modo_teste }}"
+          else
+            node automations.mjs rotina-diaria false
+          fi
